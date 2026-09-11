@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 # -----------------------------
-# Page setup
+# Page configuration
 # -----------------------------
 st.set_page_config(
     page_title="Predictive Maintenance Dashboard",
@@ -17,7 +17,7 @@ st.set_page_config(
 
 
 # -----------------------------
-# File paths
+# File locations
 # -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -26,137 +26,191 @@ MODEL_FILE = BASE_DIR / "final_model.pkl"
 
 
 # -----------------------------
-# Load data
+# Load dataset
 # -----------------------------
 @st.cache_data
 def load_data():
+
     if not DATA_FILE.exists():
-        st.error("cleaned_predictive_maintenance.csv not found.")
+        st.error(
+            "cleaned_predictive_maintenance.csv was not found "
+            "in the GitHub repository."
+        )
         st.stop()
 
-    return pd.read_csv(DATA_FILE)
+    data = pd.read_csv(DATA_FILE)
+
+    return data
 
 
 # -----------------------------
-# Load model
+# Load trained model
 # -----------------------------
 @st.cache_resource
 def load_model():
+
     if not MODEL_FILE.exists():
-        st.error("final_model.pkl not found.")
+        st.error(
+            "final_model.pkl was not found "
+            "in the GitHub repository."
+        )
         st.stop()
 
     package = joblib.load(MODEL_FILE)
 
     if isinstance(package, dict):
-        model = package["model"]
+
+        trained_model = package["model"]
+
         model_name = package.get(
             "model_name",
             "Predictive Maintenance Model"
         )
-        features = package.get("features", [])
-        threshold = package.get("threshold", 0.5)
+
+        features = package.get(
+            "features",
+            []
+        )
+
+        threshold = package.get(
+            "threshold",
+            0.5
+        )
+
     else:
-        model = package
+
+        trained_model = package
         model_name = "Predictive Maintenance Model"
         features = []
         threshold = 0.5
 
-    return model, model_name, features, threshold
+    return (
+        trained_model,
+        model_name,
+        features,
+        threshold
+    )
 
 
+# -----------------------------
+# Load everything
+# -----------------------------
 df = load_data()
+
 model, model_name, model_features, threshold = load_model()
 
 
 # -----------------------------
-# Title
+# Main title
 # -----------------------------
 st.title("⚙️ Predictive Maintenance Dashboard")
 
-st.markdown(
-    "Analyze machine conditions and estimate the probability of machine failure."
+st.write(
+    "Monitor machine conditions, explore failure patterns, "
+    "and estimate machine failure risk using a trained ML model."
 )
 
 st.divider()
 
 
-# -----------------------------
-# Sidebar filters
-# -----------------------------
+# ============================================================
+# SIDEBAR
+# ============================================================
+
 st.sidebar.header("Dashboard Filters")
 
-type_options = ["All"] + sorted(
+
+# Machine type filter
+type_values = sorted(
     df["Type"].dropna().unique().tolist()
 )
 
-selected_type = st.sidebar.selectbox(
+type_filter = st.sidebar.selectbox(
     "Machine Type",
-    type_options
+    ["All"] + type_values
 )
 
-status_options = ["All", "Normal", "Failure"]
 
-selected_status = st.sidebar.selectbox(
+# Machine status filter
+status_filter = st.sidebar.selectbox(
     "Machine Status",
-    status_options
+    ["All", "Normal", "Failure"]
 )
 
 
-# -----------------------------
-# Apply filters
-# -----------------------------
+# ============================================================
+# FILTER DATA
+# ============================================================
+
 filtered_df = df.copy()
 
-if selected_type != "All":
+
+if type_filter != "All":
+
     filtered_df = filtered_df[
-        filtered_df["Type"] == selected_type
+        filtered_df["Type"] == type_filter
     ]
 
-if selected_status == "Normal":
+
+if status_filter == "Normal":
+
     filtered_df = filtered_df[
         filtered_df["Machine failure"] == 0
     ]
 
-elif selected_status == "Failure":
+
+elif status_filter == "Failure":
+
     filtered_df = filtered_df[
         filtered_df["Machine failure"] == 1
     ]
 
 
-# -----------------------------
-# KPI section
-# -----------------------------
+# ============================================================
+# KPI SECTION
+# ============================================================
+
 total_machines = len(filtered_df)
 
 failure_count = int(
     filtered_df["Machine failure"].sum()
 )
 
-normal_count = total_machines - failure_count
-
-failure_rate = (
-    failure_count / total_machines * 100
-    if total_machines > 0
-    else 0
+normal_count = (
+    total_machines - failure_count
 )
+
+if total_machines > 0:
+
+    failure_rate = (
+        failure_count / total_machines
+    ) * 100
+
+else:
+
+    failure_rate = 0
+
 
 col1, col2, col3, col4 = st.columns(4)
 
+
 col1.metric(
-    "Machines",
+    "Total Machines",
     f"{total_machines:,}"
 )
+
 
 col2.metric(
     "Failures",
     f"{failure_count:,}"
 )
 
+
 col3.metric(
     "Normal",
     f"{normal_count:,}"
 )
+
 
 col4.metric(
     "Failure Rate",
@@ -167,23 +221,39 @@ col4.metric(
 st.divider()
 
 
-# -----------------------------
-# Charts
-# -----------------------------
+# ============================================================
+# DASHBOARD CHARTS
+# ============================================================
+
 if len(filtered_df) > 0:
 
-    col1, col2 = st.columns(2)
+    st.subheader("📊 Failure Overview")
 
+    chart_col1, chart_col2 = st.columns(2)
+
+
+    # --------------------------------------------------------
     # Failure distribution
-    with col1:
+    # --------------------------------------------------------
 
-        failure_data = pd.DataFrame({
-            "Status": ["Normal", "Failure"],
-            "Count": [normal_count, failure_count]
+    with chart_col1:
+
+        failure_distribution = pd.DataFrame({
+
+            "Status": [
+                "Normal",
+                "Failure"
+            ],
+
+            "Count": [
+                normal_count,
+                failure_count
+            ]
+
         })
 
         fig = px.pie(
-            failure_data,
+            failure_distribution,
             names="Status",
             values="Count",
             hole=0.45,
@@ -196,26 +266,38 @@ if len(filtered_df) > 0:
         )
 
 
+    # --------------------------------------------------------
     # Failure rate by machine type
-    with col2:
+    # --------------------------------------------------------
 
-        type_failure = (
+    with chart_col2:
+
+        type_summary = (
             filtered_df
             .groupby("Type")["Machine failure"]
-            .mean()
+            .agg(
+                Total="count",
+                Failures="sum"
+            )
             .reset_index()
         )
 
-        type_failure["Failure Rate (%)"] = (
-            type_failure["Machine failure"] * 100
-        )
+        type_summary["Failure Rate (%)"] = (
+            type_summary["Failures"]
+            / type_summary["Total"]
+        ) * 100
 
         fig = px.bar(
-            type_failure,
+            type_summary,
             x="Type",
             y="Failure Rate (%)",
-            title="Failure Rate by Machine Type",
-            text_auto=".2f"
+            text="Failure Rate (%)",
+            title="Failure Rate by Machine Type"
+        )
+
+        fig.update_traces(
+            texttemplate="%{text:.2f}%",
+            textposition="outside"
         )
 
         st.plotly_chart(
@@ -224,14 +306,18 @@ if len(filtered_df) > 0:
         )
 
 
-    # -----------------------------
-    # Sensor relationships
-    # -----------------------------
-    st.subheader("Machine Condition Analysis")
+    # ========================================================
+    # MACHINE CONDITION ANALYSIS
+    # ========================================================
 
-    col1, col2 = st.columns(2)
+    st.subheader("🔍 Machine Condition Analysis")
 
-    with col1:
+
+    chart_col1, chart_col2 = st.columns(2)
+
+
+    # Tool wear vs torque
+    with chart_col1:
 
         fig = px.scatter(
             filtered_df,
@@ -250,7 +336,9 @@ if len(filtered_df) > 0:
             use_container_width=True
         )
 
-    with col2:
+
+    # RPM vs torque
+    with chart_col2:
 
         fig = px.scatter(
             filtered_df,
@@ -271,6 +359,7 @@ if len(filtered_df) > 0:
 
 
     # Temperature relationship
+
     fig = px.scatter(
         filtered_df,
         x="Air temperature [K]",
@@ -291,173 +380,270 @@ if len(filtered_df) > 0:
 
 else:
 
-    st.warning("No machines match the selected filters.")
+    st.warning(
+        "No machines match the selected filters."
+    )
 
 
-# -----------------------------
-# Model information
-# -----------------------------
+# ============================================================
+# MODEL INFORMATION
+# ============================================================
+
 st.divider()
 
 st.subheader("🤖 Model Information")
 
-col1, col2, col3 = st.columns(3)
 
-col1.metric(
+model_col1, model_col2, model_col3 = st.columns(3)
+
+
+model_col1.metric(
     "Model",
     model_name
 )
 
-col2.metric(
+
+model_col2.metric(
     "Decision Threshold",
     f"{threshold:.2f}"
 )
 
-col3.metric(
+
+model_col3.metric(
     "Input Features",
     len(model_features)
 )
 
 
-# -----------------------------
-# Prediction Studio
-# -----------------------------
+# ============================================================
+# PREDICTION STUDIO
+# ============================================================
+
 st.divider()
 
 st.subheader("🔧 Prediction Studio")
 
 st.write(
-    "Enter the current machine readings to estimate the probability of failure."
+    "Enter current machine readings to estimate the probability "
+    "of machine failure."
 )
 
-col1, col2 = st.columns(2)
 
-with col1:
+input_col1, input_col2 = st.columns(2)
+
+
+# ------------------------------------------------------------
+# Left side inputs
+# ------------------------------------------------------------
+
+with input_col1:
 
     machine_type = st.selectbox(
         "Machine Type",
-        ["L", "M", "H"]
+        ["L", "M", "H"],
+        key="prediction_type"
     )
 
-    air_temp = st.number_input(
+
+    air_temperature = st.number_input(
         "Air Temperature [K]",
         min_value=250.0,
         max_value=350.0,
-        value=300.0
+        value=300.0,
+        step=0.1
     )
 
-    process_temp = st.number_input(
+
+    process_temperature = st.number_input(
         "Process Temperature [K]",
         min_value=250.0,
         max_value=350.0,
-        value=310.0
+        value=310.0,
+        step=0.1
     )
 
-    rpm = st.number_input(
+
+    rotational_speed = st.number_input(
         "Rotational Speed [rpm]",
         min_value=0.0,
         max_value=5000.0,
-        value=1500.0
+        value=1500.0,
+        step=10.0
     )
 
 
-with col2:
+# ------------------------------------------------------------
+# Right side inputs
+# ------------------------------------------------------------
+
+with input_col2:
 
     torque = st.number_input(
         "Torque [Nm]",
         min_value=0.0,
         max_value=100.0,
-        value=40.0
+        value=40.0,
+        step=0.5
     )
+
 
     tool_wear = st.number_input(
         "Tool Wear [min]",
         min_value=0.0,
         max_value=300.0,
-        value=100.0
+        value=100.0,
+        step=1.0
     )
 
 
-# -----------------------------
-# Feature engineering
-# -----------------------------
+# ============================================================
+# FEATURE ENGINEERING
+# ============================================================
+
 temperature_difference = (
-    process_temp - air_temp
+    process_temperature
+    - air_temperature
 )
+
 
 mechanical_load_proxy = (
-    torque * rpm
+    torque
+    * rotational_speed
 )
+
 
 torque_speed_ratio = (
-    torque / (rpm + 1)
+    torque
+    / (rotational_speed + 1)
 )
 
+
+# ============================================================
+# PREDICTION
+# ============================================================
 
 if st.button(
     "Predict Machine Failure",
-    type="primary"
+    type="primary",
+    use_container_width=True
 ):
 
-    input_data = pd.DataFrame({
-        "Type": [machine_type],
-        "Air temperature [K]": [air_temp],
-        "Process temperature [K]": [process_temp],
-        "Rotational speed [rpm]": [rpm],
-        "Torque [Nm]": [torque],
-        "Tool wear [min]": [tool_wear],
-        "Temperature Difference": [temperature_difference],
-        "Mechanical Load Proxy": [mechanical_load_proxy],
-        "Torque Speed Ratio": [torque_speed_ratio]
+    prediction_data = pd.DataFrame({
+
+        "Type": [
+            machine_type
+        ],
+
+        "Air temperature [K]": [
+            air_temperature
+        ],
+
+        "Process temperature [K]": [
+            process_temperature
+        ],
+
+        "Rotational speed [rpm]": [
+            rotational_speed
+        ],
+
+        "Torque [Nm]": [
+            torque
+        ],
+
+        "Tool wear [min]": [
+            tool_wear
+        ],
+
+        "Temperature Difference": [
+            temperature_difference
+        ],
+
+        "Mechanical Load Proxy": [
+            mechanical_load_proxy
+        ],
+
+        "Torque Speed Ratio": [
+            torque_speed_ratio
+        ]
+
     })
 
-    probability = model.predict_proba(
-        input_data
-    )[0][1]
 
-    prediction = int(
-        probability >= threshold
-    )
+    try:
 
-    st.subheader("Prediction Result")
-
-    result_col1, result_col2 = st.columns(2)
-
-    with result_col1:
-
-        st.metric(
-            "Failure Probability",
-            f"{probability * 100:.2f}%"
+        failure_probability = (
+            model
+            .predict_proba(prediction_data)[0][1]
         )
 
-    with result_col2:
 
-        if prediction == 1:
-            st.error(
-                "⚠️ Higher Risk: Machine failure predicted"
+        prediction = int(
+            failure_probability >= threshold
+        )
+
+
+        st.subheader("Prediction Result")
+
+
+        result_col1, result_col2 = st.columns(2)
+
+
+        with result_col1:
+
+            st.metric(
+                "Failure Probability",
+                f"{failure_probability * 100:.2f}%"
             )
-        else:
-            st.success(
-                "✅ Lower Risk: Machine operating normally"
+
+
+        with result_col2:
+
+            if prediction == 1:
+
+                st.error(
+                    "⚠️ Higher Risk: Machine failure predicted"
+                )
+
+            else:
+
+                st.success(
+                    "✅ Lower Risk: Machine operating normally"
+                )
+
+
+        st.progress(
+            min(
+                max(
+                    float(failure_probability),
+                    0.0
+                ),
+                1.0
             )
+        )
 
 
-    st.progress(
-        min(float(probability), 1.0)
-    )
+        st.write(
+            f"Model used: **{model_name}**"
+        )
 
 
-    st.caption(
-        f"Prediction generated using {model_name}."
-    )
+    except Exception as error:
+
+        st.error(
+            "Prediction could not be generated."
+        )
+
+        st.exception(error)
 
 
-# -----------------------------
-# Data table
-# -----------------------------
+# ============================================================
+# DATA TABLE
+# ============================================================
+
 st.divider()
 
-st.subheader("📋 Filtered Machine Data")
+st.subheader("📋 Machine Data")
+
 
 st.dataframe(
     filtered_df,
@@ -466,9 +652,10 @@ st.dataframe(
 )
 
 
-# -----------------------------
-# Footer
-# -----------------------------
+# ============================================================
+# FOOTER
+# ============================================================
+
 st.divider()
 
 st.caption(
